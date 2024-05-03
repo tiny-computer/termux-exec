@@ -1,5 +1,5 @@
 TERMUX_BASE_DIR ?= /data/data/com.termux/files
-CFLAGS += -Wall -Wextra -Werror -Wshadow -O2
+CFLAGS += -Wall -Wextra -Werror -Wshadow -O2 -fvisibility=hidden
 C_SOURCE := src/termux-exec.c src/exec-variants.c
 CLANG_FORMAT := clang-format --sort-includes --style="{ColumnLimit: 120}" $(C_SOURCE)
 CLANG_TIDY ?= clang-tidy

@@ -30,10 +30,13 @@ static int __exec_as_script(const char *buf, char *const *argv, char *const *env
   return execve(_PATH_BSHELL, (char **const)script_argv, envp);
 }
 
+__attribute__((visibility("default")))
 int execv(const char *name, char *const *argv) { return execve(name, argv, environ); }
 
+__attribute__((visibility("default")))
 int execvp(const char *name, char *const *argv) { return execvpe(name, argv, environ); }
 
+__attribute__((visibility("default")))
 int execvpe(const char *name, char *const *argv, char *const *envp) {
   // if (name == NULL || *name == '\0') { errno = ENOENT; return -1; }
 
@@ -120,6 +123,7 @@ static int __execl(int variant, const char *name, const char *argv0, va_list ap)
   return (variant == ExecLP) ? execvp(name, argv) : execve(name, argv, argp);
 }
 
+__attribute__((visibility("default")))
 int execl(const char *name, const char *arg, ...) {
   va_list ap;
   va_start(ap, arg);
@@ -128,6 +132,7 @@ int execl(const char *name, const char *arg, ...) {
   return result;
 }
 
+__attribute__((visibility("default")))
 int execle(const char *name, const char *arg, ...) {
   va_list ap;
   va_start(ap, arg);
@@ -136,6 +141,7 @@ int execle(const char *name, const char *arg, ...) {
   return result;
 }
 
+__attribute__((visibility("default")))
 int execlp(const char *name, const char *arg, ...) {
   va_list ap;
   va_start(ap, arg);
@@ -144,6 +150,7 @@ int execlp(const char *name, const char *arg, ...) {
   return result;
 }
 
+__attribute__((visibility("default")))
 int fexecve(int fd, char *const *argv, char *const *envp) {
   char buf[40];
   snprintf(buf, sizeof(buf), "/proc/self/fd/%d", fd);

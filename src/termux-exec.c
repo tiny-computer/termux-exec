@@ -1,8 +1,3 @@
-// Make android_get_device_api_level() use an inline variant,
-// as a libc symbol for it exists only in android-29+.
-#undef __ANDROID_API__
-#define __ANDROID_API__ 28
-
 #define _GNU_SOURCE
 // #include <dlfcn.h>
 // #include <string.h>
@@ -17,10 +12,6 @@
 #include <string.h>
 #include <sys/syscall.h>
 #include <unistd.h>
-
-#ifdef __ANDROID__
-#include <android/api-level.h>
-#endif
 
 #if UINTPTR_MAX == 0xffffffff
 #define SYSTEM_LINKER_PATH "/system/bin/linker";
@@ -261,6 +252,7 @@ static int execve_syscall(const char *executable_path, char *const argv[], char 
 }
 
 // Interceptor of the execve(2) system call using LD_PRELOAD.
+__attribute__((visibility("default")))
 int execve(const char *executable_path, char *const argv[], char *const envp[]) {
   if (getenv("TERMUX_EXEC_OPTOUT") != NULL) {
     return execve_syscall(executable_path, argv, envp);
@@ -345,9 +337,6 @@ int execve(const char *executable_path, char *const argv[], char *const envp[]) 
   // - If running on an Android 10+ where it's necesssary, and
   // - If trying to execute a file under the termux base directory
   bool wrap_in_linker =
-#ifdef __ANDROID__
-      android_get_device_api_level() >= 29 && android_get_application_target_sdk_version() >= 29 &&
-#endif
       (strstr(executable_path, termux_base_dir) != NULL);
 
   bool cleanup_env = info.is_non_native_elf ||
