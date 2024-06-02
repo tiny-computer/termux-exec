@@ -252,8 +252,7 @@ static int execve_syscall(const char *executable_path, char *const argv[], char 
 }
 
 // Interceptor of the execve(2) system call using LD_PRELOAD.
-__attribute__((visibility("default")))
-int execve(const char *executable_path, char *const argv[], char *const envp[]) {
+__attribute__((visibility("default"))) int execve(const char *executable_path, char *const argv[], char *const envp[]) {
   if (getenv("TERMUX_EXEC_OPTOUT") != NULL) {
     return execve_syscall(executable_path, argv, envp);
   }
@@ -336,8 +335,7 @@ int execve(const char *executable_path, char *const argv[], char *const envp[]) 
   // Only wrap with linker:
   // - If running on an Android 10+ where it's necesssary, and
   // - If trying to execute a file under the termux base directory
-  bool wrap_in_linker =
-      (strstr(executable_path, termux_base_dir) != NULL);
+  bool wrap_in_linker = (strstr(executable_path, termux_base_dir) != NULL);
 
   bool cleanup_env = info.is_non_native_elf ||
                      // Avoid interfering with Android /system software by removing
