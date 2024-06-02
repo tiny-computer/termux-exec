@@ -7,6 +7,9 @@ CLANG_TIDY ?= clang-tidy
 libtermux-exec.so: $(C_SOURCE)
 	$(CC) $(CFLAGS) $(LDFLAGS) $(C_SOURCE) -DTERMUX_PREFIX=\"$(TERMUX_PREFIX)\" -DTERMUX_BASE_DIR=\"$(TERMUX_BASE_DIR)\" -shared -fPIC -o libtermux-exec.so
 
+tests/fexecve: tests/fexecve.c
+	$(CC) $(CFLAGS) -DTERMUX_BASE_DIR=\"$(TERMUX_BASE_DIR)\" $< -o $@
+
 clean:
 	rm -f libtermux-exec.so tests/*-actual test-binary
 
@@ -16,7 +19,7 @@ install: libtermux-exec.so
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/lib/libtermux-exec.so
 
-on-device-tests: libtermux-exec.so
+on-device-tests: libtermux-exec.so tests/fexecve
 	@LD_PRELOAD=${CURDIR}/libtermux-exec.so ./run-tests.sh
 
 format:

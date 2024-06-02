@@ -5,3 +5,4 @@
 *.swp
 *.deb
 test-binary
+tests/fexecve

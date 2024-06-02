@@ -301,7 +301,10 @@ __attribute__((visibility("default"))) int execve(const char *executable_path, c
   const char **new_argv = NULL;
 
   // Only wrap with linker if trying to execute a file under the termux base directory:
-  bool wrap_in_linker = (strstr(executable_path, TERMUX_BASE_DIR) == executable_path);
+  char executable_path_resolved_buffer[PATH_MAX];
+  char const *executable_path_resolved = realpath(executable_path, executable_path_resolved_buffer);
+  char const *path_to_use = executable_path_resolved ? executable_path_resolved : executable_path;
+  bool wrap_in_linker = (strstr(path_to_use, TERMUX_BASE_DIR) == path_to_use);
 
   bool cleanup_env = info.is_non_native_elf ||
                      // Avoid interfering with Android /system software by removing
