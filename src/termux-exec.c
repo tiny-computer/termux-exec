@@ -31,42 +31,20 @@
 #error "unknown arch"
 #endif
 
-#define TERMUX_BASE_DIR_MAX_LEN 200
+#ifndef TERMUX_BASE_DIR
+#define TERMUX_BASE_DIR "/data/data/com.termux/files"
+#endif
 
-#define TERMUX_PREFIX_ENV_NAME "TERMUX__PREFIX"
+#define TERMUX_BIN_PATH TERMUX_BASE_DIR "/usr/bin/"
+#define TERMUX_BIN_PATH_LEN sizeof(TERMUX_BIN_PATH) - 1
 
 #define LOG_PREFIX "[termux-exec] "
-
-// Get the termux base directory, where all termux-installed packages reside under.
-// This is normally /data/data/com.termux/files
-static char const *get_termux_base_dir(char *buffer) {
-  char const *prefix = getenv(TERMUX_PREFIX_ENV_NAME);
-  if (prefix && strlen(prefix) <= TERMUX_BASE_DIR_MAX_LEN) {
-    char *last_slash_ptr = strrchr(prefix, '/');
-    if (last_slash_ptr != NULL) {
-      size_t len_up_until_last_slash = last_slash_ptr - prefix + 1;
-      if (len_up_until_last_slash > 10) { // Just a sanity check low limit.
-        snprintf(buffer, len_up_until_last_slash, "%s", prefix);
-        buffer[len_up_until_last_slash] = 0;
-        return buffer;
-      }
-    }
-  }
-  return TERMUX_BASE_DIR;
-}
 
 // Check if `string` starts with `prefix`.
 static bool starts_with(const char *string, const char *prefix) { return strncmp(string, prefix, strlen(prefix)) == 0; }
 
 // Rewrite e.g. "/bin/sh" and "/usr/bin/sh" to "${TERMUX_PREFIX}/bin/sh".
-//
-// The termux_base_dir argument comes from get_termux_base_dir(), so have a
-// max length of TERMUX_BASE_DIR_MAX_LEN.
-static const char *termux_rewrite_executable(const char *termux_base_dir, const char *executable_path, char *buffer,
-                                             int buffer_len) {
-  char termux_bin_path[TERMUX_BASE_DIR_MAX_LEN + 16];
-  int termux_bin_path_len = sprintf(termux_bin_path, "%s/usr/bin/", termux_base_dir);
-
+static const char *termux_rewrite_executable(const char *executable_path, char *buffer, int buffer_len) {
   if (executable_path[0] != '/') {
     return executable_path;
   }
@@ -74,12 +52,12 @@ static const char *termux_rewrite_executable(const char *termux_base_dir, const 
   char *bin_match = strstr(executable_path, "/bin/");
   if (bin_match == executable_path || bin_match == (executable_path + 4)) {
     // Found "/bin/" or "/xxx/bin" at the start of executable_path.
-    strcpy(buffer, termux_bin_path);
-    char *dest = buffer + termux_bin_path_len;
+    strcpy(buffer, TERMUX_BIN_PATH);
+    char *dest = buffer + TERMUX_BIN_PATH_LEN;
     // Copy what comes after "/bin/":
     const char *src = bin_match + 5;
-    size_t bytes_to_copy = buffer_len - termux_bin_path_len;
-    strncpy(dest, src, bytes_to_copy);
+    size_t max_bytes_to_copy = buffer_len - TERMUX_BIN_PATH_LEN;
+    strncpy(dest, src, max_bytes_to_copy);
     return buffer;
   } else {
     return executable_path;
@@ -188,8 +166,7 @@ struct file_header_info {
   char const *interpreter_arg;
 };
 
-static void inspect_file_header(char const *termux_base_dir, char *header, size_t header_len,
-                                struct file_header_info *result) {
+static void inspect_file_header(char *header, size_t header_len, struct file_header_info *result) {
   if (header_len >= 20 && !memcmp(header, ELFMAG, SELFMAG)) {
     result->is_elf = true;
     Elf32_Ehdr *ehdr = (Elf32_Ehdr *)header;
@@ -244,7 +221,7 @@ static void inspect_file_header(char const *termux_base_dir, char *header, size_
   }
 
   result->interpreter =
-      termux_rewrite_executable(termux_base_dir, interpreter, result->interpreter_buf, sizeof(result->interpreter_buf));
+      termux_rewrite_executable(interpreter, result->interpreter_buf, sizeof(result->interpreter_buf));
 }
 
 static int execve_syscall(const char *executable_path, char *const argv[], char *const envp[]) {
@@ -267,19 +244,10 @@ __attribute__((visibility("default"))) int execve(const char *executable_path, c
     }
   }
 
-  // Size of TERMUX_BASE_DIR_MAX_LEN + "/usr/bin/sh".
-  char termux_base_dir_buf[TERMUX_BASE_DIR_MAX_LEN + 16];
-
-  const char *termux_base_dir = get_termux_base_dir(termux_base_dir_buf);
-  if (termux_exec_debug) {
-    fprintf(stderr, LOG_PREFIX "Using base dir: '%s'\n", termux_base_dir);
-  }
-
   const char *orig_executable_path = executable_path;
 
   char executable_path_buffer[PATH_MAX];
-  executable_path = termux_rewrite_executable(termux_base_dir, executable_path, executable_path_buffer,
-                                              sizeof(executable_path_buffer));
+  executable_path = termux_rewrite_executable(executable_path, executable_path_buffer, sizeof(executable_path_buffer));
   if (termux_exec_debug && executable_path_buffer == executable_path) {
     fprintf(stderr, LOG_PREFIX "Rewritten path: '%s'\n", executable_path);
   }
@@ -308,7 +276,7 @@ __attribute__((visibility("default"))) int execve(const char *executable_path, c
       .interpreter = NULL,
       .interpreter_arg = NULL,
   };
-  inspect_file_header(termux_base_dir, header, read_bytes, &info);
+  inspect_file_header(header, read_bytes, &info);
 
   if (!info.is_elf && info.interpreter == NULL) {
     if (termux_exec_debug) {
@@ -332,10 +300,8 @@ __attribute__((visibility("default"))) int execve(const char *executable_path, c
 
   const char **new_argv = NULL;
 
-  // Only wrap with linker:
-  // - If running on an Android 10+ where it's necesssary, and
-  // - If trying to execute a file under the termux base directory
-  bool wrap_in_linker = (strstr(executable_path, termux_base_dir) != NULL);
+  // Only wrap with linker if trying to execute a file under the termux base directory:
+  bool wrap_in_linker = (strstr(executable_path, TERMUX_BASE_DIR) == executable_path);
 
   bool cleanup_env = info.is_non_native_elf ||
                      // Avoid interfering with Android /system software by removing
@@ -460,7 +426,6 @@ __attribute__((visibility("default"))) int execve(const char *executable_path, c
 
 #ifdef UNIT_TEST
 #include <assert.h>
-#define TERMUX_BIN_PATH TERMUX_BASE_DIR "/usr/bin/"
 
 void assert_string_equals(const char *expected, const char *actual) {
   if (strcmp(actual, expected) != 0) {
@@ -476,14 +441,13 @@ void test_starts_with() {
 
 void test_termux_rewrite_executable() {
   char buf[PATH_MAX];
-  char const *b = TERMUX_BASE_DIR;
-  assert_string_equals(TERMUX_BIN_PATH "sh", termux_rewrite_executable(b, "/bin/sh", buf, PATH_MAX));
-  assert_string_equals(TERMUX_BIN_PATH "sh", termux_rewrite_executable(b, "/usr/bin/sh", buf, PATH_MAX));
-  assert_string_equals("/system/bin/sh", termux_rewrite_executable(b, "/system/bin/sh", buf, PATH_MAX));
-  assert_string_equals("/system/bin/tool", termux_rewrite_executable(b, "/system/bin/tool", buf, PATH_MAX));
-  assert_string_equals(TERMUX_BIN_PATH "sh", termux_rewrite_executable(b, TERMUX_BIN_PATH "sh", buf, PATH_MAX));
-  assert_string_equals(TERMUX_BIN_PATH, termux_rewrite_executable(b, "/bin/", buf, PATH_MAX));
-  assert_string_equals("./ab/sh", termux_rewrite_executable(b, "./ab/sh", buf, PATH_MAX));
+  assert_string_equals(TERMUX_BIN_PATH "sh", termux_rewrite_executable("/bin/sh", buf, PATH_MAX));
+  assert_string_equals(TERMUX_BIN_PATH "sh", termux_rewrite_executable("/usr/bin/sh", buf, PATH_MAX));
+  assert_string_equals("/system/bin/sh", termux_rewrite_executable("/system/bin/sh", buf, PATH_MAX));
+  assert_string_equals("/system/bin/tool", termux_rewrite_executable("/system/bin/tool", buf, PATH_MAX));
+  assert_string_equals(TERMUX_BIN_PATH "sh", termux_rewrite_executable(TERMUX_BIN_PATH "sh", buf, PATH_MAX));
+  assert_string_equals(TERMUX_BIN_PATH, termux_rewrite_executable("/bin/", buf, PATH_MAX));
+  assert_string_equals("./ab/sh", termux_rewrite_executable("./ab/sh", buf, PATH_MAX));
 }
 
 void test_remove_ld_from_env() {
@@ -537,35 +501,35 @@ void test_inspect_file_header() {
   struct file_header_info info = {.interpreter_arg = NULL};
 
   sprintf(header, "#!/bin/sh\n");
-  inspect_file_header(TERMUX_BASE_DIR, header, 256, &info);
+  inspect_file_header(header, 256, &info);
   assert(!info.is_elf);
   assert(!info.is_non_native_elf);
   assert_string_equals(TERMUX_BIN_PATH "sh", info.interpreter);
   assert(info.interpreter_arg == NULL);
 
   sprintf(header, "#!/bin/sh -x\n");
-  inspect_file_header(TERMUX_BASE_DIR, header, 256, &info);
+  inspect_file_header(header, 256, &info);
   assert(!info.is_elf);
   assert(!info.is_non_native_elf);
   assert_string_equals(TERMUX_BIN_PATH "sh", info.interpreter);
   assert_string_equals("-x", info.interpreter_arg);
 
   sprintf(header, "#! /bin/sh -x\n");
-  inspect_file_header(TERMUX_BASE_DIR, header, 256, &info);
+  inspect_file_header(header, 256, &info);
   assert(!info.is_elf);
   assert(!info.is_non_native_elf);
   assert_string_equals(TERMUX_BIN_PATH "sh", info.interpreter);
   assert_string_equals("-x", info.interpreter_arg);
 
   sprintf(header, "#!/bin/sh -x \n");
-  inspect_file_header(TERMUX_BASE_DIR, header, 256, &info);
+  inspect_file_header(header, 256, &info);
   assert(!info.is_elf);
   assert(!info.is_non_native_elf);
   assert_string_equals(TERMUX_BIN_PATH "sh", info.interpreter);
   assert_string_equals("-x", info.interpreter_arg);
 
   sprintf(header, "#!/bin/sh -x \n");
-  inspect_file_header(TERMUX_BASE_DIR, header, 256, &info);
+  inspect_file_header(header, 256, &info);
   assert(!info.is_elf);
   assert(!info.is_non_native_elf);
   assert_string_equals(TERMUX_BIN_PATH "sh", info.interpreter);
@@ -579,7 +543,7 @@ void test_inspect_file_header() {
   // Native instruction set:
   header[0x12] = EM_NATIVE;
   header[0x13] = 0;
-  inspect_file_header(TERMUX_BASE_DIR, header, 256, &info);
+  inspect_file_header(header, 256, &info);
   assert(info.is_elf);
   assert(!info.is_non_native_elf);
   assert(info.interpreter == NULL);
@@ -593,30 +557,11 @@ void test_inspect_file_header() {
   // 'Fujitsu MMA Multimedia Accelerator' instruction set - likely non-native.
   header[0x12] = 0x36;
   header[0x13] = 0;
-  inspect_file_header(TERMUX_BASE_DIR, header, 256, &info);
+  inspect_file_header(header, 256, &info);
   assert(info.is_elf);
   assert(info.is_non_native_elf);
   assert(info.interpreter == NULL);
   assert(info.interpreter_arg == NULL);
-}
-
-void test_get_termux_base_dir() {
-  char buffer[TERMUX_BASE_DIR_MAX_LEN + 16];
-
-  setenv(TERMUX_PREFIX_ENV_NAME, "/data/data/com.termux/files/usr", true);
-  assert_string_equals("/data/data/com.termux/files", get_termux_base_dir(buffer));
-
-  setenv(TERMUX_PREFIX_ENV_NAME, "/data/data/com.termux/files/usr/made/up", true);
-  assert_string_equals("/data/data/com.termux/files/usr/made", get_termux_base_dir(buffer));
-
-  setenv(TERMUX_PREFIX_ENV_NAME, "/a/path/to/some/prefix/here", true);
-  assert_string_equals("/a/path/to/some/prefix", get_termux_base_dir(buffer));
-
-  setenv(TERMUX_PREFIX_ENV_NAME, "/a/path/to/some/prefix/here", true);
-  assert_string_equals("/a/path/to/some/prefix", get_termux_base_dir(buffer));
-
-  unsetenv(TERMUX_PREFIX_ENV_NAME);
-  assert_string_equals(TERMUX_BASE_DIR, get_termux_base_dir(buffer));
 }
 
 int main() {
@@ -625,7 +570,6 @@ int main() {
   test_remove_ld_from_env();
   test_normalize_path();
   test_inspect_file_header();
-  test_get_termux_base_dir();
   return 0;
 }
 #endif
