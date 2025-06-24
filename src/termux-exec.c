@@ -407,11 +407,11 @@ __attribute__((visibility("default"))) int execve(const char *executable_path, c
     //   new_argv[current_argc++] = orig_executable_path;
     // }
 
-    // for (int i = 1; i < orig_argv_count; i++) {
-    //   new_argv[current_argc++] = argv[i];
-    // }
-    // new_argv[current_argc] = NULL;
-    // argv = (char **)new_argv;
+    for (int i = 1; i < orig_argv_count; i++) {
+      new_argv[current_argc++] = argv[i];
+    }
+    new_argv[current_argc] = NULL;
+    argv = (char **)new_argv;
   }
 
   if (termux_exec_debug) {
