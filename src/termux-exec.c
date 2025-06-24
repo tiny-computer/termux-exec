@@ -348,8 +348,8 @@ __attribute__((visibility("default"))) int execve(const char *executable_path, c
   const char **new_argv = NULL;
 
   // Only wrap with linker if trying to execute a file under the termux base directory:
-  char executable_path_resolved_buffer[PATH_MAX];
-  char const *executable_path_resolved = realpath(executable_path, executable_path_resolved_buffer);
+  // char executable_path_resolved_buffer[PATH_MAX];
+  // char const *executable_path_resolved = realpath(executable_path, executable_path_resolved_buffer);
   // char const *path_to_use = executable_path_resolved ? executable_path_resolved : executable_path;
   // bool wrap_in_linker = starts_with(path_to_use, "/data")
   //                       // /system/bin/sh is fine, it only uses libc++, libc, and libdl.
