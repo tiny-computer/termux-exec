@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - '*'
-  pull_request:
 
 jobs:
   check:
@@ -15,7 +14,7 @@ jobs:
       - uses: nttld/setup-ndk@v1
         id: setup-ndk
         with:
-          ndk-version: r26d
+          ndk-version: r28c
           link-to-sdk: true
       - run: brew install clang-format
       - run: make CC="${ANDROID_NDK_HOME}"/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android30-clang
@@ -24,7 +23,13 @@ jobs:
       - run: make check CLANG_TIDY="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/clang-tidy --extra-arg=--target=aarch64-linux-android29"
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+
+  host-build-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - run: make unit-test CC=clang HOST_BUILD=1
+      - run: make on-normal-linux-tests CC=clang HOST_BUILD=1
 
   actionlint:
     runs-on: ubuntu-latest
